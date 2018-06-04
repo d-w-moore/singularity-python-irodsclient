@@ -68,8 +68,8 @@ if not(admin_username) or not(admin_username) :
   jsonConfigFile = options.get('-j',default_admin_creds_file)
   with open(jsonConfigFile) as f:
     jsonConfig = json.load(f)
-    admin_username = jsonConfig.get('admin_username')
-    admin_password = jsonConfig.get('admin_password')
+    admin_username = str(jsonConfig.get('admin_username'))
+    admin_password = str(jsonConfig.get('admin_password'))
 
 assert ( admin_username and admin_password )
 

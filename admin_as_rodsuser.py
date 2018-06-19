@@ -106,105 +106,105 @@ options_for_session = { 'client_user': user,
                         'irods_env_file' :  env_file,
                         'irods_authentication_file' :  auth_file,
                       }
-session = None
 
 k = options_for_session.keys()
 for k_ in k: 
   if not options_for_session[k_]:
     del options_for_session[k_]
 
-if not session:
-    session = iRODSSession( **options_for_session )
+with iRODSSession( **options_for_session ) as session:
 
-if not user : user = 'rods'
-else:
+  if not user : user = 'rods'
+  else:
+    if verbosity >= 1:
+      print( "\tActing for user '{}'".format(session.username) , file = stderr )
+
+  md_manifest_file = options['-m']
+
+  if not(phyP) or not(os.path.isfile(phyP)):
+    print ("invalid physical file path '{}'\n\t" \
+	   "as source for iRODS register()".format(phyP), file=sys.stderr)
+    raise SystemExit(1)
+
+  mdManifest = {}
+  with open(md_manifest_file,'r') as f:
+    mdManifest = json.load(f)
+
+  register_opts = { 'rescName': 'demoResc' }
+  parentCollName =  mdManifest["parentIrodsTargetPath"]
+  parentColl = None
+
+  try:
+    parentColl = session.collections.get(parentCollName)
+  except Exception as e:
+    print(  repr(e) + "\n -- trying create" ,file=stderr)
+    parentColl = session.collections.create(parentCollName)
+
+  assert parentColl, "Could not find collection in which to register " +\
+		     "{}".format(phyP)
+
+  if not(rescN):
+    del register_opts['rescName'] 
+  else:
+    register_opts['rescName'] = rescN
+
+  data_object_basename = os.path.basename (phyP)
+  logP = parentColl.path + "/" + data_object_basename
+    
+  answer = 'y'
+
   if verbosity >= 1:
-    print( "\tActing for user '{}'".format(session.username) , file = stderr )
+    print ('username = "{}" ' .format( session.username), file = stderr)
+    print ('phyP     = "{}" ' .format( phyP), file = stderr )
+    print ('logP     = "{}" ' .format( logP), file = stderr )
+    print ('rescN    = "{}" ' .format( rescN), file = stderr )
+    print ('opts     = "{!r}" ' .format( register_opts), file = stderr )
 
-md_manifest_file = options['-m']
+    if verbosity >= 2:
+      assert _input is not None
+      answer = _input('proceed (y/n) -> ')
 
-if not(phyP) or not(os.path.isfile(phyP)):
-  print ("invalid physical file path '{}'\n\t" \
-         "as source for iRODS register()".format(phyP), file=sys.stderr)
-  raise SystemExit(1)
+  if answer.upper().strip() == 'Y':
 
-mdManifest = {}
-with open(md_manifest_file,'r') as f:
-  mdManifest = json.load(f)
+    task_options = options.get('-t','gmtl')
 
-register_opts = { 'rescName': 'demoResc' }
-parentCollName =  mdManifest["parentIrodsTargetPath"]
-parentColl = None
+    # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-try:
-  parentColl = session.collections.get(parentCollName)
-except Exception as e:
-  print(  repr(e) + "\n -- trying create" ,file=stderr)
-  parentColl = session.collections.create(parentCollName)
+    if 'g' in task_options:
+      print ( '** Registering **' , file = stderr )
+      session.data_objects.register ( phyP , logP , **register_opts )
 
-assert parentColl, "Could not find collection in which to register " +\
-                   "{}".format(phyP)
+    # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-if not(rescN):
-  del register_opts['rescName'] 
-else:
-  register_opts['rescName'] = rescN
+    if 'm' in task_options:
+      print ( '** Setting metadata **', file = stderr)
+      data_obj = session.data_objects.get( logP )
+      physical_path_for_data_obj = data_obj.path
+      for md_op in mdManifest.get("operation", [] ):
+	action = md_op["action"] 
+	if action == 'ADD':
+	  if md_op["irodsPath"] == os.path.basename ( data_obj.path ):
+	    md_record = iRODSMeta ( md_op["attribute"],md_op["value"],md_op["unit"] )
+	    data_obj.metadata.add ( md_record )
+	else:
+	  print (" unimplemented feature '{}' requested in mdmanifest file '{}'" )
+	
+    # -- replicate product to long term storage
 
-data_object_basename = os.path.basename (phyP)
-logP = parentColl.path + "/" + data_object_basename
-  
-answer = 'y'
+    if 'l' in task_options:
 
-if verbosity >= 1:
-  print ('username = "{}" ' .format( session.username), file = stderr)
-  print ('phyP     = "{}" ' .format( phyP), file = stderr )
-  print ('logP     = "{}" ' .format( logP), file = stderr )
-  print ('rescN    = "{}" ' .format( rescN), file = stderr )
-  print ('opts     = "{!r}" ' .format( register_opts), file = stderr )
+      repls_list = replicate_and_list_good_replicas (session , logP ,  long_term_rescN )
 
-  if verbosity >= 2:
-    assert _input is not None
-    answer = _input('proceed (y/n) -> ')
+    # -- remove any redundant product replicas
 
-if answer.upper().strip() == 'Y':
+    if 't' in task_options:
 
-  task_options = options.get('-t','gmtl')
+      redundant_repls = [ r for r in repls_list if r.resource_name != long_term_rescN ]
 
-  # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+      if redundant_repls and len(redundant_repls) < len(repls_list):
+	for r in redundant_repls:
+	   data_obj.unlink ( replNum = r.number)
 
-  if 'g' in task_options:
-    print ( '** Registering **' , file = stderr )
-    session.data_objects.register ( phyP , logP , **register_opts )
+  # end if # answer.upper().strip() == 'Y':
 
-  # =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-  if 'm' in task_options:
-    print ( '** Setting metadata **', file = stderr)
-    data_obj = session.data_objects.get( logP )
-    physical_path_for_data_obj = data_obj.path
-    for md_op in mdManifest.get("operation", [] ):
-      action = md_op["action"] 
-      if action == 'ADD':
-        if md_op["irodsPath"] == os.path.basename ( data_obj.path ):
-          md_record = iRODSMeta ( md_op["attribute"],md_op["value"],md_op["unit"] )
-          data_obj.metadata.add ( md_record )
-      else:
-        print (" unimplemented feature '{}' requested in mdmanifest file '{}'" )
-      
-# -- replicate product to long term storage
-
-  if 'l' in task_options:
-
-    repls_list = replicate_and_list_good_replicas (session , logP ,  long_term_rescN )
-
-# -- remove any redundant product replicas
-
-  if 't' in task_options:
-
-    redundant_repls = [ r for r in repls_list if r.resource_name != long_term_rescN ]
-
-    if redundant_repls and len(redundant_repls) < len(repls_list):
-      for r in redundant_repls:
-         data_obj.unlink ( replNum = r.number)
-
-  1
+#end #  with iRODSSession(...) as session

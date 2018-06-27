@@ -10,16 +10,12 @@ From: ubuntu:14.04
 
 %files
   admin_as_rodsuser.py
-  authenticate_rodsuser.py
 
 %apprun help
   /usr/bin/python /admin_as_rodsuser.py  -h
 
 %apprun debug
   exec /usr/bin/python -m pdb /admin_as_rodsuser.py "$@"
-
-%apprun auth_user_with_pw
-  exec /usr/bin/python /authenticate_rodsuser.py "$1" "$2"
 
 %runscript
   exec /usr/bin/python /admin_as_rodsuser.py "$@"

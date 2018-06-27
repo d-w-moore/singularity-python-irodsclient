@@ -138,9 +138,11 @@ with iRODSSession( **options_for_session ) as session:
     parentColl = session.collections.get(parentCollName)
   except Exception as e:
     print(  repr(e) + "\n -- trying create" ,file=stderr)
-    parentColl = session.collections.create(parentCollName)
+    try:
+      parentColl = session.collections.create(parentCollName)
+    except: pass
 
-  assert parentColl, "Could not find collection in which to register " +\
+  assert parentColl, "Could not find or create collection in which to register " +\
 		     "{}".format(phyP)
 
   if not(rescN):
